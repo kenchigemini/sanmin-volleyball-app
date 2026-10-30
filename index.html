@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>臺北市三民國小排球隊 - 賽事行程管理系統 V5 (雲端盃賽自動搜尋版)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK (Compat Version) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white; font-size: 11pt; color: black; }
+            .page-break { page-break-before: always; }
+        }
+        .print-only { display: none; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+
+    <!-- 頂部導覽列 -->
+    <header class="bg-blue-900 text-white py-5 px-4 shadow-lg no-print">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-2">
+                    🏐 臺北市三民國小排球隊
+                </h1>
+                <p class="text-blue-200 text-xs md:text-sm mt-1">賽事行程管理 & 獨立家長同意書 (V5.0 雲端盃賽清單自動檢索版)</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="saveToCloud()" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
+                    ☁️ 上傳至雲端
+                </button>
+                <button onclick="loadFromCloud()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
+                    🔄 下載選定盃賽
+                </button>
+                <button onclick="printNoticeOnly()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
+                    🖨️ 印賽事通知單
+                </button>
+                <button onclick="printConsentOnly()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
+                    📝 印家長同意書
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto p-4 md:p-6 my-2">
+
+        <!-- 輸入表單區 (列印時隱藏) -->
+        <div class="no-print space-y-6">
+
+            <!-- Firebase 雲端盃賽檢索狀態列 -->
+            <div class="bg-emerald-50 border-l-4 border-emerald-600 p-4 rounded-xl shadow-sm space-y-3">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 border-b border-emerald-200 pb-2">
+                    <div class="flex items-center gap-2 text-xs md:text-sm">
+                        <span id="fbStatusIcon" class="text-base">🟢</span>
+                        <span class="font-bold text-emerald-900">Firebase 雲端連線正常</span>
+                        <span class="text-slate-500 text-xs">(專案: <code class="font-mono bg-white px-1 py-0.5 rounded border">sanmin-volleyball</code>)</span>
+                    </div>
+                    <button onclick="fetchCloudTournaments()" class="text-xs bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1 rounded font-bold transition flex items-center gap-1">
+                        🔍 重新搜尋雲端已儲存盃賽
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs md:text-sm">
+                    <div>
+                        <label class="font-bold text-slate-700 block mb-1">📂 1. 選擇雲端已有盃賽：</label>
+                        <select id="tournamentSelect" onchange="onTournamentSelectChange(this.value)" class="w-full p-2 border border-emerald-300 rounded bg-white font-bold text-blue-900 focus:ring-2 focus:ring-emerald-500">
+                            <option value="">-- 正在搜尋雲端已儲存盃賽... --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-700 block mb-1">🔑 2. 當前盃賽識別碼 (可自由新建/修改)：</label>
+                        <input type="text" id="tournamentKey" value="115_中華盃" onchange="switchTournamentKey()" class="w-full p-2 border rounded bg-white font-bold text-blue-900 focus:ring-2 focus:ring-blue-500" placeholder="例如：115_中華盃">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 賽事基本資料 -->
+            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <h2 class="text-lg font-bold text-blue-900 border-b pb-2 mb-4">📌 賽事基本資料</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="lg:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">賽事名稱</label>
+                        <input type="text" id="tournamentName" oninput="updateView()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">賽事日期範圍 (文字備註)</label>
+                        <input type="text" id="tournamentDate" oninput="updateView()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="lg:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">賽事地點 (場館名稱及地址)</label>
+                        <input type="text" id="tournamentLocation" oninput="updateView()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">休息 / 住宿地點</label>
+                        <input type="text" id="stayLocation" oninput="updateView()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">出發比賽時間與集合地點</label>
+                        <input type="text" id="departureTime" oninput="updateView()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">預計回程時間</label>
+                        <input type="text" id="returnTime" oninput="updateView()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">家長同意書繳交截止日</label>
+                        <input type="text" id="deadlineDate" oninput="updateView()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="例如：115年11月06日 (五) 16:00前">
+                    </div>
+                </div>
+
+                <!-- 帶隊教練老師 -->
+                <div class="mt-6 pt-4 border-t">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-bold text-slate-800">
+                            📞 帶隊教練老師聯絡資料 (統一職稱「帶隊教練老師」，可增減人數)
+                        </h3>
+                        <button onclick="addContactRow()" class="bg-blue-800 hover:bg-blue-900 text-white px-3 py-1.5 rounded text-xs font-bold shadow">
+                            ➕ 新增帶隊教練老師
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-slate-200/70 text-slate-700 border-b">
+                                    <th class="p-2 w-36">統一職稱</th>
+                                    <th class="p-2">帶隊教練老師姓名</th>
+                                    <th class="p-2">聯絡電話</th>
+                                    <th class="p-2 w-16 text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="contactInputTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 動態賽程管理 -->
+            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b pb-3 mb-4 gap-2">
+                    <div>
+                        <h2 class="text-lg font-bold text-blue-900">📅 賽事日程與對戰安排 (系統自動按「日期與預計開賽時間」順序排列)</h2>
+                        <p class="text-xs text-slate-500">比賽日期採用日曆點選；開賽時間自動排序於通知單中。</p>
+                    </div>
+                    <button onclick="addMatchRow()" class="bg-blue-800 hover:bg-blue-900 text-white px-3 py-1.5 rounded text-xs font-bold shadow">
+                        ➕ 新增一筆賽程
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-700 border-b">
+                                <th class="p-2 w-40">比賽日期 (日曆點選)</th>
+                                <th class="p-2 w-32">預計開賽時間</th>
+                                <th class="p-2 w-36">參賽組別</th>
+                                <th class="p-2">對戰學校</th>
+                                <th class="p-2 w-36">比賽場地</th>
+                                <th class="p-2 w-16 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="matchInputTbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 注意事項 -->
+            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <h2 class="text-lg font-bold text-blue-900 border-b pb-2 mb-3">📝 給家長的注意事項與帶隊叮嚀</h2>
+                <textarea id="extraNotes" oninput="updateView()" rows="3" class="w-full p-2 border rounded text-sm" placeholder="請輸入叮嚀與注意事項..."></textarea>
+            </div>
+
+        </div>
+
+        <!-- 列印區 1：賽事行程通知單 -->
+        <div id="noticePrintArea" class="bg-white p-8 md:p-10 shadow-xl rounded-xl border border-slate-300 print:shadow-none print:border-none print:p-0 my-4">
+            <div class="text-center border-b-2 border-blue-900 pb-3 mb-4">
+                <h1 class="text-2xl font-extrabold text-blue-900 tracking-wide">臺北市松山區三民國民小學排球隊</h1>
+                <h2 class="text-xl font-bold text-slate-800 mt-1" id="pv_tournamentName">賽事行程通知單</h2>
+                <p class="text-xs text-slate-500 mt-1">【 代表隊賽事行程與帶隊資訊 】</p>
+            </div>
+
+            <table class="w-full border-collapse border border-slate-400 text-xs mb-5">
+                <tbody>
+                    <tr>
+                        <td class="border border-slate-400 bg-slate-100 font-bold p-2 w-24 text-slate-700">賽事名稱</td>
+                        <td class="border border-slate-400 p-2" id="pv_name_cell">-</td>
+                        <td class="border border-slate-400 bg-slate-100 font-bold p-2 w-24 text-slate-700">賽事日期</td>
+                        <td class="border border-slate-400 p-2" id="pv_date_cell">-</td>
+                    </tr>
+                    <tr>
+                        <td class="border border-slate-400 bg-slate-100 font-bold p-2 text-slate-700">比賽地點</td>
+                        <td class="border border-slate-400 p-2" id="pv_location_cell">-</td>
+                        <td class="border border-slate-400 bg-slate-100 font-bold p-2 w-24 text-slate-700">休息/住宿地點</td>
+                        <td class="border border-slate-400 p-2" id="pv_stay_cell">-</td>
+                    </tr>
+                    <tr>
+                        <td class="border border-slate-400 bg-slate-100 font-bold p-2 text-slate-700">出發時間</td>
+                        <td class="border border-slate-400 p-2" id="pv_departure_cell">-</td>
+                        <td class="border border-slate-400 bg-slate-100 font-bold p-2 w-24 text-slate-700">預計回程時間</td>
+                        <td class="border border-slate-400 p-2" id="pv_return_cell">-</td>
+                    </tr>
+                    <tr>
+                        <td class="border border-slate-400 bg-slate-100 font-bold p-2 text-slate-700">帶隊教練老師</td>
+                        <td class="border border-slate-400 p-2" colspan="3" id="pv_contacts_cell">-</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 class="text-base font-bold text-blue-900 mb-2 border-l-4 border-blue-800 pl-2">
+                🏐 每日賽程對戰時間表 (按日期與預計開賽時間依序排列)
+            </h3>
+            <div id="pv_schedule_container" class="space-y-4 mb-5"></div>
+
+            <div>
+                <h3 class="text-base font-bold text-blue-900 mb-2 border-l-4 border-blue-800 pl-2">📌 注意事項與攜帶物品</h3>
+                <div class="p-3 border border-slate-300 rounded bg-slate-50 text-xs whitespace-pre-wrap leading-relaxed" id="pv_notes_cell"></div>
+            </div>
+        </div>
+
+        <div class="page-break"></div>
+
+        <!-- 列印區 2：獨立學生參賽家長同意書 -->
+        <div id="consentPrintArea" class="bg-white p-8 md:p-12 shadow-xl rounded-xl border border-slate-300 print:shadow-none print:border-none print:p-0 my-6">
+            <div class="text-center border-b-2 border-blue-900 pb-4 mb-8">
+                <h1 class="text-2xl md:text-3xl font-extrabold text-blue-900 tracking-wide">臺北市松山區三民國民小學排球隊</h1>
+                <h2 class="text-xl md:text-2xl font-bold text-slate-800 mt-2">學生參賽家長同意書暨回條</h2>
+            </div>
+
+            <div class="space-y-6 text-sm text-slate-800 leading-relaxed px-2">
+                <p class="text-base font-semibold">親愛的家長您好：</p>
+                <p class="indent-8">
+                    本校排球隊代表隊擬訂於 <span id="pv2_date" class="font-bold underline"></span> 帶領學生前往参加
+                    「<span id="pv2_tournamentName" class="font-bold text-blue-900 underline"></span>」。
+                    活動期間將由帶隊教練老師全程照顧學生生活起居與比賽安全。
+                </p>
+
+                <div class="bg-slate-50 p-4 border border-slate-300 rounded-lg space-y-2 text-xs">
+                    <div><strong>📍 比賽地點：</strong><span id="pv2_location"></span></div>
+                    <div><strong>🏨 休息/住宿地點：</strong><span id="pv2_stay"></span></div>
+                    <div><strong>🚌 集合出發時間：</strong><span id="pv2_departure"></span></div>
+                    <div><strong>🚍 預計返校時間：</strong><span id="pv2_return"></span></div>
+                    <div><strong>📞 帶隊教練老師與電話：</strong><span id="pv2_contacts"></span></div>
+                </div>
+
+                <div class="border-t border-b border-slate-300 py-4 my-6">
+                    <h3 class="font-bold text-base text-slate-900 mb-3 text-center">--- 家 長 同 意 意 願 回 條 ---</h3>
+                    <p class="mb-4">
+                        茲同意 本人子弟 <span class="inline-block border-b-2 border-slate-800 w-32 text-center font-bold text-base"></span> 
+                        （班級：<span class="inline-block border-b-2 border-slate-800 w-16 text-center font-bold"></span> 年 <span class="inline-block border-b-2 border-slate-800 w-16 text-center font-bold"></span> 班）
+                        參加本次排球隊賽事活動，並督促子弟遵守團隊紀律與帶隊教練老師之指導。
+                    </p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                        <div class="space-y-4">
+                            <div>家長 / 監護人簽章：___________________________</div>
+                            <div>緊急聯絡電話：___________________________</div>
+                        </div>
+                        <div class="space-y-4">
+                            <div>學生特殊健康狀況或飲食說明(無則免填)：__________________</div>
+                            <div>填寫日期：中華民國 _______ 年 _______ 月 _______ 日</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-xs text-slate-500 text-right">
+                    ⚠️ 請於 <span id="pv2_deadline" class="font-bold text-red-600 underline"></span> 前簽妥本同意書交回給帶隊教練老師。
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // EMBEDDED FIREBASE CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyB-dwhZRi4gflst0_-1Ge1lWlRVYBqUiec",
+            authDomain: "sanmin-volleyball.firebaseapp.com",
+            databaseURL: "https://sanmin-volleyball-default-rtdb.firebaseio.com",
+            projectId: "sanmin-volleyball",
+            storageBucket: "sanmin-volleyball.firebasestorage.app",
+            messagingSenderId: "606437825861",
+            appId: "1:606437825861:web:e6b80408078973ff14b22c",
+            measurementId: "G-9J8Y2GKT3W"
+        };
+
+        let dbRef = null;
+
+        function initFirebaseAuto() {
+            try {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                const key = document.getElementById('tournamentKey').value || '115_中華盃';
+                dbRef = firebase.database().ref('tournaments/' + key);
+            } catch(e) {
+                console.error("Firebase Init Error:", e);
+            }
+        }
+
+        // 自動從 Firebase 抓取所有盃賽列表並填入下拉選單
+        function fetchCloudTournaments() {
+            if (!firebase.apps.length) initFirebaseAuto();
+            const rootRef = firebase.database().ref('tournaments');
+            
+            const select = document.getElementById('tournamentSelect');
+            select.innerHTML = '<option value="">⏳ 正在檢索雲端盃賽資料...</option>';
+
+            rootRef.once('value').then(snapshot => {
+                const data = snapshot.val();
+                select.innerHTML = '';
+
+                if (!data) {
+                    select.innerHTML = '<option value="">⚠️ 雲端尚無任何儲存的盃賽</option>';
+                } else {
+                    const defaultOpt = document.createElement('option');
+                    defaultOpt.value = "";
+                    defaultOpt.innerText = "👇 請選擇要下載/編輯的盃賽 (" + Object.keys(data).length + " 個賽事)";
+                    select.appendChild(defaultOpt);
+
+                    Object.keys(data).forEach(key => {
+                        const tourData = data[key] || {};
+                        const name = tourData.tournamentName || "未命名盃賽";
+                        const opt = document.createElement('option');
+                        opt.value = key;
+                        opt.innerText = `🏆 [${key}] ${name}`;
+                        select.appendChild(opt);
+                    });
+                }
+
+                const newOpt = document.createElement('option');
+                newOpt.value = "__NEW__";
+                newOpt.innerText = "➕ 【手動建立新盃賽】";
+                select.appendChild(newOpt);
+
+            }).catch(err => {
+                console.error("Fetch Cloud List Error:", err);
+                select.innerHTML = '<option value="">❌ 讀取雲端清單失敗：' + err.message + '</option>';
+            });
+        }
+
+        function onTournamentSelectChange(val) {
+            if (!val) return;
+            if (val === "__NEW__") {
+                const newKey = prompt("請輸入新盃賽識別碼 (例如：115_永信盃)：", "115_永信盃");
+                if (newKey) {
+                    document.getElementById('tournamentKey').value = newKey.trim();
+                    switchTournamentKey();
+                }
+            } else {
+                document.getElementById('tournamentKey').value = val;
+                switchTournamentKey();
+            }
+        }
+
+        function switchTournamentKey() {
+            const key = document.getElementById('tournamentKey').value || '115_中華盃';
+            dbRef = firebase.database().ref('tournaments/' + key);
+            loadFromCloud();
+        }
+
+        const WEEKDAYS = ["(日)", "(一)", "(二)", "(三)", "(四)", "(五)", "(六)"];
+
+        function formatDateDisplay(dateStr) {
+            if (!dateStr) return "未指定日期";
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            const month = d.getMonth() + 1;
+            const day = d.getDate();
+            const weekday = WEEKDAYS[d.getDay()];
+            return `${month}/${day} ${weekday}`;
+        }
+
+        const defaultData = {
+            tournamentName: "115學年度全國中華盃國小師生排球錦標賽",
+            tournamentDate: "2026年11月12日 (四) ～ 11月15日 (日)",
+            tournamentLocation: "雲林縣立體育館 (雲林縣斗六市大學路三段300號)",
+            stayLocation: "北港朝天宮會館 / 比賽休息區 B 區",
+            departureTime: "11/12 (四) 06:30 三民國小校門口集合發車",
+            returnTime: "11/15 (日) 18:30 返抵三民國小大門口",
+            deadlineDate: "115年11月06日 (五) 16:00前",
+            contacts: [
+                { name: "張主任", phone: "0912-345-678" },
+                { name: "林教練", phone: "0922-111-222" },
+                { name: "陳教練", phone: "0933-444-555" }
+            ],
+            extraNotes: "1. 請選手攜帶健保卡、個人隨身藥品、水壺、替換衣物。\n2. 準備深色與淺色球衣各一套。\n3. 比賽期間請配合帶隊教練老師指導，注重團隊紀律與禮貌。",
+            matches: [
+                { date: "2026-11-12", time: "10:00", group: "四年級以下男童", school: "新竹國小", venue: "第 A 場地" },
+                { date: "2026-11-12", time: "11:00", group: "五年級男童", school: "屏東國小", venue: "第 B 場地" },
+                { date: "2026-11-12", time: "13:00", group: "六年級男童", school: "高雄國小", venue: "主場館 A" },
+                { date: "2026-11-12", time: "14:00", group: "四年級以下男童", school: "臺中國小", venue: "第 A 場地" },
+                { date: "2026-11-12", time: "15:00", group: "六年級女童", school: "花蓮國小", venue: "主場館 B" },
+                { date: "2026-11-14", time: "09:00", group: "四年級以下男童", school: "四強隊伍", venue: "第 A 場地" },
+                { date: "2026-11-14", time: "10:00", group: "六年級女童", school: "八強隊伍", venue: "主場館 B" },
+                { date: "2026-11-14", time: "11:00", group: "六年級男童", school: "八強隊伍", venue: "主場館 A" },
+                { date: "2026-11-14", time: "15:00", group: "五年級男童", school: "準決賽隊伍", venue: "第 B 場地" },
+                { date: "2026-11-15", time: "09:30", group: "五年級男童", school: "決賽隊伍", venue: "第 B 場地" },
+                { date: "2026-11-15", time: "10:30", group: "四年級以下男童", school: "總決賽隊伍", venue: "第 A 場地" },
+                { date: "2026-11-15", time: "13:30", group: "六年級男童", school: "冠亞軍隊伍", venue: "主場館 A" }
+            ]
+        };
+
+        let currentData = JSON.parse(localStorage.getItem('sanmin_vb_v5_data')) || defaultData;
+
+        function initForms() {
+            document.getElementById('tournamentName').value = currentData.tournamentName || '';
+            document.getElementById('tournamentDate').value = currentData.tournamentDate || '';
+            document.getElementById('tournamentLocation').value = currentData.tournamentLocation || '';
+            document.getElementById('stayLocation').value = currentData.stayLocation || '';
+            document.getElementById('departureTime').value = currentData.departureTime || '';
+            document.getElementById('returnTime').value = currentData.returnTime || '';
+            document.getElementById('deadlineDate').value = currentData.deadlineDate || '';
+            document.getElementById('extraNotes').value = currentData.extraNotes || '';
+
+            renderContactsInputTable();
+            renderMatchInputTable();
+            updateView();
+        }
+
+        function renderContactsInputTable() {
+            const tbody = document.getElementById('contactInputTbody');
+            tbody.innerHTML = '';
+
+            (currentData.contacts || []).forEach((c, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-slate-100/80";
+                tr.innerHTML = `
+                    <td class="p-2 font-semibold text-slate-600">帶隊教練老師</td>
+                    <td class="p-1.5"><input type="text" value="${c.name || ''}" onchange="updateContactItem(${idx}, 'name', this.value)" class="w-full p-1.5 border rounded" placeholder="姓名 (如：張老師)"></td>
+                    <td class="p-1.5"><input type="text" value="${c.phone || ''}" onchange="updateContactItem(${idx}, 'phone', this.value)" class="w-full p-1.5 border rounded" placeholder="電話 (如：0912-345-678)"></td>
+                    <td class="p-1.5 text-center"><button onclick="deleteContactRow(${idx})" class="text-red-600 hover:text-red-800 font-bold">🗑️</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function addContactRow() {
+            currentData.contacts = currentData.contacts || [];
+            currentData.contacts.push({ name: "", phone: "" });
+            renderContactsInputTable();
+            updateView();
+        }
+
+        function updateContactItem(idx, field, val) {
+            currentData.contacts[idx][field] = val;
+            updateView();
+        }
+
+        function deleteContactRow(idx) {
+            currentData.contacts.splice(idx, 1);
+            renderContactsInputTable();
+            updateView();
+        }
+
+        function renderMatchInputTable() {
+            const tbody = document.getElementById('matchInputTbody');
+            tbody.innerHTML = '';
+
+            (currentData.matches || []).forEach((m, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-slate-50";
+                tr.innerHTML = `
+                    <td class="p-1.5"><input type="date" value="${m.date || ''}" onchange="updateMatchItem(${idx}, 'date', this.value)" class="w-full p-1 border rounded font-mono"></td>
+                    <td class="p-1.5"><input type="text" value="${m.time || ''}" onchange="updateMatchItem(${idx}, 'time', this.value)" class="w-full p-1 border rounded" placeholder="例如：10:00"></td>
+                    <td class="p-1.5">
+                        <select onchange="updateMatchItem(${idx}, 'group', this.value)" class="w-full p-1 border rounded bg-white">
+                            <option ${m.group==='四年級以下男童'?'selected':''}>四年級以下男童</option>
+                            <option ${m.group==='四年級以下女童'?'selected':''}>四年級以下女童</option>
+                            <option ${m.group==='五年級男童'?'selected':''}>五年級男童</option>
+                            <option ${m.group==='五年級女童'?'selected':''}>五年級女童</option>
+                            <option ${m.group==='六年級男童'?'selected':''}>六年級男童</option>
+                            <option ${m.group==='六年級女童'?'selected':''}>六年級女童</option>
+                        </select>
+                    </td>
+                    <td class="p-1.5"><input type="text" value="${m.school || ''}" onchange="updateMatchItem(${idx}, 'school', this.value)" class="w-full p-1 border rounded" placeholder="例如：新竹國小"></td>
+                    <td class="p-1.5"><input type="text" value="${m.venue || ''}" onchange="updateMatchItem(${idx}, 'venue', this.value)" class="w-full p-1 border rounded" placeholder="例如：第 A 場地"></td>
+                    <td class="p-1.5 text-center"><button onclick="deleteMatchRow(${idx})" class="text-red-600 hover:text-red-800 font-bold">🗑️</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function addMatchRow() {
+            currentData.matches = currentData.matches || [];
+            const todayStr = new Date().toISOString().split('T')[0];
+            currentData.matches.push({ date: todayStr, time: "09:00", group: "五年級男童", school: "對戰學校", venue: "第 A 場地" });
+            renderMatchInputTable();
+            updateView();
+        }
+
+        function updateMatchItem(idx, field, val) {
+            currentData.matches[idx][field] = val;
+            updateView();
+        }
+
+        function deleteMatchRow(idx) {
+            currentData.matches.splice(idx, 1);
+            renderMatchInputTable();
+            updateView();
+        }
+
+        function collectData() {
+            currentData.tournamentName = document.getElementById('tournamentName').value;
+            currentData.tournamentDate = document.getElementById('tournamentDate').value;
+            currentData.tournamentLocation = document.getElementById('tournamentLocation').value;
+            currentData.stayLocation = document.getElementById('stayLocation').value;
+            currentData.departureTime = document.getElementById('departureTime').value;
+            currentData.returnTime = document.getElementById('returnTime').value;
+            currentData.deadlineDate = document.getElementById('deadlineDate').value;
+            currentData.extraNotes = document.getElementById('extraNotes').value;
+            return currentData;
+        }
+
+        function updateView() {
+            const data = collectData();
+
+            let contactsArr = (data.contacts || []).map(c => {
+                if (c.name) return `帶隊教練老師 ${c.name}${c.phone ? ' (' + c.phone + ')' : ''}`;
+                return null;
+            }).filter(Boolean);
+
+            const contactsStr = contactsArr.join(' ｜ ') || '未設定帶隊教練老師資料';
+
+            document.getElementById('pv_tournamentName').innerText = data.tournamentName || '賽事行程通知單';
+            document.getElementById('pv_name_cell').innerText = data.tournamentName || '-';
+            document.getElementById('pv_date_cell').innerText = data.tournamentDate || '-';
+            document.getElementById('pv_location_cell').innerText = data.tournamentLocation || '-';
+            document.getElementById('pv_stay_cell').innerText = data.stayLocation || '-';
+            document.getElementById('pv_departure_cell').innerText = data.departureTime || '-';
+            document.getElementById('pv_return_cell').innerText = data.returnTime || '-';
+            document.getElementById('pv_contacts_cell').innerText = contactsStr;
+            document.getElementById('pv_notes_cell').innerText = data.extraNotes || '無特殊注意事項';
+
+            document.getElementById('pv2_tournamentName').innerText = data.tournamentName || '盃賽賽事';
+            document.getElementById('pv2_date').innerText = data.tournamentDate || '比賽日期';
+            document.getElementById('pv2_location').innerText = data.tournamentLocation || '-';
+            document.getElementById('pv2_stay').innerText = data.stayLocation || '-';
+            document.getElementById('pv2_departure').innerText = data.departureTime || '-';
+            document.getElementById('pv2_return').innerText = data.returnTime || '-';
+            document.getElementById('pv2_contacts').innerText = contactsStr;
+            document.getElementById('pv2_deadline').innerText = data.deadlineDate || '規定期限';
+
+            renderSortedSchedule(data.matches || []);
+            localStorage.setItem('sanmin_vb_v5_data', JSON.stringify(data));
+        }
+
+        function renderSortedSchedule(matches) {
+            const container = document.getElementById('pv_schedule_container');
+            container.innerHTML = '';
+
+            if (matches.length === 0) {
+                container.innerHTML = '<div class="text-center p-4 text-slate-400 border rounded">尚無排定賽程</div>';
+                return;
+            }
+
+            const grouped = {};
+            matches.forEach(m => {
+                const dateKey = m.date ? m.date.trim() : '未指定日期';
+                if (!grouped[dateKey]) grouped[dateKey] = [];
+                grouped[dateKey].push(m);
+            });
+
+            const sortedDates = Object.keys(grouped).sort();
+
+            sortedDates.forEach(dateRaw => {
+                const dayMatches = grouped[dateRaw].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+                const formattedDate = formatDateDisplay(dateRaw);
+                const dateBlock = document.createElement('div');
+                dateBlock.className = "border border-slate-300 rounded overflow-hidden";
+
+                let rowsHtml = dayMatches.map(m => `
+                    <tr class="border-b border-slate-200 text-xs">
+                        <td class="p-2 font-bold text-blue-900 w-28 text-center bg-blue-50/50">${m.time || '待定'}</td>
+                        <td class="p-2 font-semibold text-slate-800 w-40">${m.group || '-'}</td>
+                        <td class="p-2 font-medium text-slate-700">${m.school || '-'}</td>
+                        <td class="p-2 w-36 text-center text-slate-600 font-medium">${m.venue || '-'}</td>
+                    </tr>
+                `).join('');
+
+                dateBlock.innerHTML = `
+                    <div class="bg-blue-900 text-white px-3 py-1.5 font-bold text-xs flex justify-between items-center">
+                        <span>📅 日期：${formattedDate} (${dateRaw})</span>
+                        <span class="text-blue-200 text-[11px]">共 ${dayMatches.length} 場次賽事</span>
+                    </div>
+                    <table class="w-full border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 border-b border-slate-300 text-slate-600 text-[11px]">
+                                <th class="p-1.5 text-center">預計開賽時間</th>
+                                <th class="p-1.5 text-left">參賽組別</th>
+                                <th class="p-1.5 text-left">對戰學校</th>
+                                <th class="p-1.5 text-center">比賽場地</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                `;
+                container.appendChild(dateBlock);
+            });
+        }
+
+        // 雲端儲存與同步
+        function saveToCloud() {
+            updateView();
+            if (!dbRef) initFirebaseAuto();
+            dbRef.set(currentData).then(() => {
+                alert('☁️ 資料已成功同步上傳至 Firebase 雲端！');
+                fetchCloudTournaments(); // 儲存後自動更新選單清單
+            }).catch(err => {
+                alert('❌ 儲存至雲端失敗：' + err.message);
+            });
+        }
+
+        function loadFromCloud() {
+            if (!dbRef) initFirebaseAuto();
+            dbRef.once('value').then(snapshot => {
+                const val = snapshot.val();
+                if (val) {
+                    currentData = val;
+                    initForms();
+                    alert('🎉 已由 Firebase 雲端成功載入【' + (currentData.tournamentName || '該賽事') + '】之最新賽程！');
+                } else {
+                    alert('⚠️ 雲端資料庫中查無此識別碼 (' + (document.getElementById('tournamentKey').value) + ') 之資料，您可以直接編輯後點選「上傳至雲端」建立新賽事。');
+                }
+            }).catch(err => {
+                alert('❌ 讀取失敗：' + err.message);
+            });
+        }
+
+        function printNoticeOnly() {
+            updateView();
+            document.getElementById('consentPrintArea').classList.add('no-print');
+            document.getElementById('noticePrintArea').classList.remove('no-print');
+            window.print();
+            document.getElementById('consentPrintArea').classList.remove('no-print');
+        }
+
+        function printConsentOnly() {
+            updateView();
+            document.getElementById('noticePrintArea').classList.add('no-print');
+            document.getElementById('consentPrintArea').classList.remove('no-print');
+            window.print();
+            document.getElementById('consentPrintArea').classList.remove('no-print');
+        }
+
+        window.onload = function() {
+            initFirebaseAuto();
+            initForms();
+            fetchCloudTournaments(); // 網頁載入時自動搜尋雲端盃賽
+        };
+    </script>
+</body>
+</html>
