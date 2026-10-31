@@ -3,18 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>臺北市三民國小排球隊 - 賽事行程管理系統 V5 (雲端盃賽自動搜尋版)</title>
+    <title>臺北市三民國小排球隊 - 賽事行程管理系統 V8 (新增導師簽名欄位)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Firebase SDK (Compat Version) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <!-- html2pdf.js for direct PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
+        /* 避免文字與區塊在跨頁時被中斷裁切 */
+        .avoid-break {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            -webkit-column-break-inside: avoid !important;
+        }
+
         @media print {
             .no-print { display: none !important; }
             .print-only { display: block !important; }
             body { background: white; font-size: 11pt; color: black; }
             .page-break { page-break-before: always; }
+            .avoid-break {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
         }
         .print-only { display: none; }
     </style>
@@ -28,20 +41,23 @@
                 <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-2">
                     🏐 臺北市三民國小排球隊
                 </h1>
-                <p class="text-blue-200 text-xs md:text-sm mt-1">賽事行程管理 & 獨立家長同意書 (V5.0 雲端盃賽清單自動檢索版)</p>
+                <p class="text-blue-200 text-xs md:text-sm mt-1">賽事行程管理 & 獨立家長同意書 (V8.0 新增導師簽名欄位)</p>
             </div>
             <div class="flex flex-wrap gap-2">
-                <button onclick="saveToCloud()" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
+                <button onclick="saveToCloud()" class="bg-sky-500 hover:bg-sky-600 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-bold shadow transition flex items-center gap-1">
                     ☁️ 上傳至雲端
                 </button>
-                <button onclick="loadFromCloud()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
+                <button onclick="loadFromCloud()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-bold shadow transition flex items-center gap-1">
                     🔄 下載選定盃賽
                 </button>
-                <button onclick="printNoticeOnly()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
-                    🖨️ 印賽事通知單
+                <button onclick="exportNoticePDF()" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-bold shadow transition flex items-center gap-1">
+                    📥 下載通知單 PDF
                 </button>
-                <button onclick="printConsentOnly()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition flex items-center gap-1">
-                    📝 印家長同意書
+                <button onclick="exportConsentPDF()" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-bold shadow transition flex items-center gap-1">
+                    📥 下載同意書 PDF
+                </button>
+                <button onclick="window.print()" class="bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-xs md:text-sm font-bold shadow transition flex items-center gap-1">
+                    🖨️ 直接列印
                 </button>
             </div>
         </div>
@@ -179,13 +195,13 @@
 
         <!-- 列印區 1：賽事行程通知單 -->
         <div id="noticePrintArea" class="bg-white p-8 md:p-10 shadow-xl rounded-xl border border-slate-300 print:shadow-none print:border-none print:p-0 my-4">
-            <div class="text-center border-b-2 border-blue-900 pb-3 mb-4">
+            <div class="text-center border-b-2 border-blue-900 pb-3 mb-4 avoid-break">
                 <h1 class="text-2xl font-extrabold text-blue-900 tracking-wide">臺北市松山區三民國民小學排球隊</h1>
                 <h2 class="text-xl font-bold text-slate-800 mt-1" id="pv_tournamentName">賽事行程通知單</h2>
                 <p class="text-xs text-slate-500 mt-1">【 代表隊賽事行程與帶隊資訊 】</p>
             </div>
 
-            <table class="w-full border-collapse border border-slate-400 text-xs mb-5">
+            <table class="w-full border-collapse border border-slate-400 text-xs mb-5 avoid-break">
                 <tbody>
                     <tr>
                         <td class="border border-slate-400 bg-slate-100 font-bold p-2 w-24 text-slate-700">賽事名稱</td>
@@ -212,12 +228,13 @@
                 </tbody>
             </table>
 
-            <h3 class="text-base font-bold text-blue-900 mb-2 border-l-4 border-blue-800 pl-2">
+            <h3 class="text-base font-bold text-blue-900 mb-2 border-l-4 border-blue-800 pl-2 avoid-break">
                 🏐 每日賽程對戰時間表 (按日期與預計開賽時間依序排列)
             </h3>
+            
             <div id="pv_schedule_container" class="space-y-4 mb-5"></div>
 
-            <div>
+            <div class="avoid-break mt-4">
                 <h3 class="text-base font-bold text-blue-900 mb-2 border-l-4 border-blue-800 pl-2">📌 注意事項與攜帶物品</h3>
                 <div class="p-3 border border-slate-300 rounded bg-slate-50 text-xs whitespace-pre-wrap leading-relaxed" id="pv_notes_cell"></div>
             </div>
@@ -226,7 +243,8 @@
         <div class="page-break"></div>
 
         <!-- 列印區 2：獨立學生參賽家長同意書 -->
-        <div id="consentPrintArea" class="bg-white p-8 md:p-12 shadow-xl rounded-xl border border-slate-300 print:shadow-none print:border-none print:p-0 my-6">
+        <div id="consentPrintArea" class="bg-white p-8 md:p-12 shadow-xl rounded-xl border border-slate-300 print:shadow-none print:border-none print:p-0 my-6 avoid-break">
+            
             <div class="text-center border-b-2 border-blue-900 pb-4 mb-8">
                 <h1 class="text-2xl md:text-3xl font-extrabold text-blue-900 tracking-wide">臺北市松山區三民國民小學排球隊</h1>
                 <h2 class="text-xl md:text-2xl font-bold text-slate-800 mt-2">學生參賽家長同意書暨回條</h2>
@@ -249,22 +267,20 @@
                 </div>
 
                 <div class="border-t border-b border-slate-300 py-4 my-6">
-                    <h3 class="font-bold text-base text-slate-900 mb-3 text-center">--- 家 長 同 意 意 願 回 條 ---</h3>
-                    <p class="mb-4">
+                    <h3 class="font-bold text-base text-slate-900 mb-4 text-center">--- 家 長 同 意 意 願 回 條 ---</h3>
+                    
+                    <p class="mb-5">
                         茲同意 本人子弟 <span class="inline-block border-b-2 border-slate-800 w-32 text-center font-bold text-base"></span> 
                         （班級：<span class="inline-block border-b-2 border-slate-800 w-16 text-center font-bold"></span> 年 <span class="inline-block border-b-2 border-slate-800 w-16 text-center font-bold"></span> 班）
                         參加本次排球隊賽事活動，並督促子弟遵守團隊紀律與帶隊教練老師之指導。
                     </p>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                        <div class="space-y-4">
-                            <div>家長 / 監護人簽章：___________________________</div>
-                            <div>緊急聯絡電話：___________________________</div>
-                        </div>
-                        <div class="space-y-4">
-                            <div>學生特殊健康狀況或飲食說明(無則免填)：__________________</div>
-                            <div>填寫日期：中華民國 _______ 年 _______ 月 _______ 日</div>
-                        </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 pt-2">
+                        <div>家長 / 監護人簽章：___________________________</div>
+                        <div>導師簽章：___________________________</div>
+                        <div>緊急聯絡電話：___________________________</div>
+                        <div>填寫日期：中華民國 _______ 年 _______ 月 _______ 日</div>
+                        <div class="md:col-span-2 pt-1">學生特殊健康狀況或飲食說明(無則免填)：__________________________________________</div>
                     </div>
                 </div>
 
@@ -272,6 +288,7 @@
                     ⚠️ 請於 <span id="pv2_deadline" class="font-bold text-red-600 underline"></span> 前簽妥本同意書交回給帶隊教練老師。
                 </div>
             </div>
+
         </div>
 
     </main>
@@ -303,7 +320,6 @@
             }
         }
 
-        // 自動從 Firebase 抓取所有盃賽列表並填入下拉選單
         function fetchCloudTournaments() {
             if (!firebase.apps.length) initFirebaseAuto();
             const rootRef = firebase.database().ref('tournaments');
@@ -406,7 +422,7 @@
             ]
         };
 
-        let currentData = JSON.parse(localStorage.getItem('sanmin_vb_v5_data')) || defaultData;
+        let currentData = JSON.parse(localStorage.getItem('sanmin_vb_v8_data')) || defaultData;
 
         function initForms() {
             document.getElementById('tournamentName').value = currentData.tournamentName || '';
@@ -547,7 +563,7 @@
             document.getElementById('pv2_deadline').innerText = data.deadlineDate || '規定期限';
 
             renderSortedSchedule(data.matches || []);
-            localStorage.setItem('sanmin_vb_v5_data', JSON.stringify(data));
+            localStorage.setItem('sanmin_vb_v8_data', JSON.stringify(data));
         }
 
         function renderSortedSchedule(matches) {
@@ -555,7 +571,7 @@
             container.innerHTML = '';
 
             if (matches.length === 0) {
-                container.innerHTML = '<div class="text-center p-4 text-slate-400 border rounded">尚無排定賽程</div>';
+                container.innerHTML = '<div class="text-center p-4 text-slate-400 border rounded avoid-break">尚無排定賽程</div>';
                 return;
             }
 
@@ -572,7 +588,7 @@
                 const dayMatches = grouped[dateRaw].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
                 const formattedDate = formatDateDisplay(dateRaw);
                 const dateBlock = document.createElement('div');
-                dateBlock.className = "border border-slate-300 rounded overflow-hidden";
+                dateBlock.className = "border border-slate-300 rounded overflow-hidden avoid-break";
 
                 let rowsHtml = dayMatches.map(m => `
                     <tr class="border-b border-slate-200 text-xs">
@@ -604,13 +620,13 @@
             });
         }
 
-        // 雲端儲存與同步
+        // Firebase Cloud Operations
         function saveToCloud() {
             updateView();
             if (!dbRef) initFirebaseAuto();
             dbRef.set(currentData).then(() => {
                 alert('☁️ 資料已成功同步上傳至 Firebase 雲端！');
-                fetchCloudTournaments(); // 儲存後自動更新選單清單
+                fetchCloudTournaments();
             }).catch(err => {
                 alert('❌ 儲存至雲端失敗：' + err.message);
             });
@@ -625,33 +641,46 @@
                     initForms();
                     alert('🎉 已由 Firebase 雲端成功載入【' + (currentData.tournamentName || '該賽事') + '】之最新賽程！');
                 } else {
-                    alert('⚠️ 雲端資料庫中查無此識別碼 (' + (document.getElementById('tournamentKey').value) + ') 之資料，您可以直接編輯後點選「上傳至雲端」建立新賽事。');
+                    alert('⚠️ 雲端資料庫中查無此識別碼 (' + (document.getElementById('tournamentKey').value) + ') 之資料。');
                 }
             }).catch(err => {
                 alert('❌ 讀取失敗：' + err.message);
             });
         }
 
-        function printNoticeOnly() {
+        // 導出 PDF 檔 (加入 pagebreak 設定防跨頁裁切)
+        function exportNoticePDF() {
             updateView();
-            document.getElementById('consentPrintArea').classList.add('no-print');
-            document.getElementById('noticePrintArea').classList.remove('no-print');
-            window.print();
-            document.getElementById('consentPrintArea').classList.remove('no-print');
+            const element = document.getElementById('noticePrintArea');
+            const opt = {
+                margin:       [8, 8, 8, 8],
+                filename:     (currentData.tournamentName || '賽事行程') + '_通知單.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+            };
+            html2pdf().set(opt).from(element).save();
         }
 
-        function printConsentOnly() {
+        function exportConsentPDF() {
             updateView();
-            document.getElementById('noticePrintArea').classList.add('no-print');
-            document.getElementById('consentPrintArea').classList.remove('no-print');
-            window.print();
-            document.getElementById('consentPrintArea').classList.remove('no-print');
+            const element = document.getElementById('consentPrintArea');
+            const opt = {
+                margin:       [8, 8, 8, 8],
+                filename:     (currentData.tournamentName || '賽事行程') + '_家長同意書.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+            };
+            html2pdf().set(opt).from(element).save();
         }
 
         window.onload = function() {
             initFirebaseAuto();
             initForms();
-            fetchCloudTournaments(); // 網頁載入時自動搜尋雲端盃賽
+            fetchCloudTournaments();
         };
     </script>
 </body>
